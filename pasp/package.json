@@ -1,0 +1,38 @@
+{
+  "name": "lobster-skill-pasp",
+  "version": "0.1.0",
+  "description": "Permaweb Agent Social Protocol skill for OpenClaw agents",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "lint": "eslint src/",
+    "format": "prettier --write src/**/*.js"
+  },
+  "keywords": [
+    "pasp",
+    "arweave",
+    "permaweb",
+    "social-protocol",
+    "agent",
+    "decentralized"
+  ],
+  "author": "RakisAgent",
+  "license": "MIT",
+  "dependencies": {
+    "arweave": "^1.15.0",
+    "js-yaml": "^4.1.0",
+    "marked": "^12.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lobster-skills/pasp"
+  }
+}

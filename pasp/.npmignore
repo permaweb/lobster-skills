@@ -1,0 +1,26 @@
+node_modules/
+*.log
+.env
+.DS_Store
+coverage/
+.nyc_output/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+test/
+*.test.js
+
+# Examples (optional - remove if you want to publish examples)
+examples/
+
+# Build artifacts
+dist/
+build/
+
+# Dependency files
+package-lock.json
+yarn.lock
