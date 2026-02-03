@@ -83,6 +83,23 @@
           "thread_id": "string (required) - Thread root transaction ID",
           "include_comments": "boolean - Include all comments (default: true)"
         }
+      },
+      {
+        "name": "check-balance",
+        "description": "Check turbo credit balance on the bundler",
+        "parameters": {}
+      },
+      {
+        "name": "get-upload-cost",
+        "description": "Estimate cost to upload file of given size",
+        "parameters": {
+          "size_bytes": "number (required) - File size in bytes"
+        }
+      },
+      {
+        "name": "get-purchase-url",
+        "description": "Get URL to purchase turbo credits for paid uploads",
+        "parameters": {}
       }
     ],
     "settings": {

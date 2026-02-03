@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import { marked } from 'marked';
 import fs from 'fs/promises';
 import path from 'path';
+import TurboClient from './turbo-client.js';
 
 /**
  * PASP - Permaweb Agent Social Protocol
@@ -19,7 +20,11 @@ const DEFAULT_CONFIG = {
   wallet_path: '~/rakis-agent.json',
   arweave_gateway: 'https://arweave.net',
   graphql_endpoint: 'https://arweave.net/graphql',
-  profile_cache_ttl: 3600 // 1 hour
+  profile_cache_ttl: 3600, // 1 hour
+  use_bundler: true, // Use bundler by default for free uploads
+  bundler_url: 'https://turbo.ardrive.io', // Turbo bundler URL
+  turbo_url: 'https://turbo.ardrive.io', // Turbo URL
+  free_tier_limit: 500 * 1024 // 500KB free tier with ArDrive Turbo
 };
 
 class PASPSkill {
@@ -33,6 +38,7 @@ class PASPSkill {
     this.wallet = null;
     this.walletAddress = null;
     this.profileCache = new Map();
+    this.turboClient = null;
   }
 
   /**
@@ -44,6 +50,16 @@ class PASPSkill {
       const walletData = await fs.readFile(walletPath, 'utf-8');
       this.wallet = JSON.parse(walletData);
       this.walletAddress = await this.arweave.wallets.jwkToAddress(this.wallet);
+      
+      // Initialize TurboClient if bundler is enabled
+      if (this.config.use_bundler) {
+        this.turboClient = new TurboClient(this.wallet, {
+          bundlerUrl: this.config.bundler_url,
+          turboUrl: this.config.turbo_url,
+          freeTierLimit: this.config.free_tier_limit
+        });
+        await this.turboClient.initialize();
+      }
     }
     return this;
   }
@@ -520,11 +536,36 @@ class PASPSkill {
 
   /**
    * Create and post a transaction in one step
+   * Uses bundler for free/paid uploads if enabled, otherwise direct Arweave upload
    */
   async createAndPost(content, tags) {
-    const transaction = await this.createTransaction(content, tags);
-    const txId = await this.postTransaction(transaction);
-    return txId;
+    if (this.config.use_bundler && this.turboClient) {
+      // Use bundler for free uploads or paid uploads with credits
+      try {
+        const result = await this.turboClient.upload(content, tags);
+        // For backwards compatibility with the rest of the code, return just the ID
+        return result.id;
+      } catch (bundlerError) {
+        // If bundler fails, fall back to direct upload with a warning
+        console.warn('Bundler upload failed, falling back to direct upload:', bundlerError.message);
+        
+        // Format tags for direct upload (add protocol tags)
+        const fullTags = {
+          ...tags,
+          'App-Name': APP_NAME,
+          'Version': PROTOCOL_VERSION
+        };
+        
+        const transaction = await this.createTransaction(content, fullTags);
+        const txId = await this.postTransaction(transaction);
+        return txId;
+      }
+    } else {
+      // Use direct Arweave upload
+      const transaction = await this.createTransaction(content, tags);
+      const txId = await this.postTransaction(transaction);
+      return txId;
+    }
   }
 
   /**
@@ -562,8 +603,106 @@ class PASPSkill {
    * Get this agent's name from profile cache
    */
   async getAgentName() {
-    const profile = await this.getProfile(this.walletAddress);
-    return profile?.metadata?.agent_name || null;
+    // Query for profile by agent ID (wallet address)
+    const query = `
+      query {
+        transactions(
+          tags: [
+            { name: "App-Name", values: ["${APP_NAME}"] },
+            { name: "Action-Type", values: ["profile"] },
+            { name: "Agent-Id", values: ["${this.walletAddress}"] }
+          ]
+          first: 1
+        ) {
+          edges {
+            node {
+              id
+              tags { name value }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.executeGraphQL(query);
+    const edges = result.data?.transactions?.edges || [];
+    
+    if (edges.length === 0) {
+      return null;
+    }
+
+    return edges[0].node.tags.find(t => t.name === 'Agent-Name')?.value || null;
+  }
+
+  /**
+   * Check turbo credit balance (bundler only)
+   */
+  async checkBalance() {
+    await this.initialize();
+    
+    if (!this.config.use_bundler || !this.turboClient) {
+      return {
+        error: 'Bundler is not enabled. Set use_bundler: true in config',
+        bundler_enabled: false
+      };
+    }
+
+    const balanceWinston = await this.turboClient.getBalance();
+    const balanceAR = balanceWinston / 1e12;
+
+    return {
+      balance_winston: balanceWinston,
+      balance_ar: balanceAR.toFixed(6),
+      bundler_address: this.turboClient.address,
+      currency: 'arweave',
+      bundler_enabled: true,
+      turbo_url: this.config.turbo_url
+    };
+  }
+
+  /**
+   * Get upload cost estimate (bundler only)
+   */
+  async getUploadCost(sizeBytes) {
+    await this.initialize();
+    
+    if (!this.config.use_bundler || !this.turboClient) {
+      return {
+        error: 'Bundler is not enabled. Set use_bundler: true in config',
+        bundler_enabled: false
+      };
+    }
+
+    const costInfo = await this.turboClient.getUploadCost(sizeBytes);
+    
+    return {
+      size_bytes: costInfo.sizeBytes,
+      size_kb: costInfo.sizeKB,
+      cost_winston: costInfo.cost,
+      cost_ar: (costInfo.cost / 1e12).toFixed(6),
+      is_free: costInfo.isFree,
+      free_tier_limit_kb: this.config.free_tier_limit / 1024,
+      bundler_enabled: true
+    };
+  }
+
+  /**
+   * Get turbo credit purchase URL (bundler only)
+   */
+  getPurchaseURL() {
+    if (!this.config.use_bundler || !this.turboClient) {
+      return {
+        error: 'Bundler is not enabled. Set use_bundler: true in config',
+        bundler_enabled: false
+      };
+    }
+
+    return {
+      purchase_url: this.turboClient.getPurchaseURL(),
+      address: this.turboClient.address,
+      minimum_purchase: '$5 USD',
+      notes: 'Visit the URL to purchase credits. Credits are automatically applied to your account.'
+    };
   }
 }
 

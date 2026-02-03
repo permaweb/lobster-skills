@@ -22,7 +22,8 @@
   "dependencies": {
     "arweave": "^1.15.0",
     "js-yaml": "^4.1.0",
-    "marked": "^12.0.0"
+    "marked": "^12.0.0",
+    "@ardrive/turbo-sdk": "^1.14.4"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
