@@ -61,23 +61,31 @@ class TurboClient {
     if (this.isFreeUpload(sizeBytes)) {
       return {
         cost: 0,
+        costWinc: 0,
         isFree: true,
         sizeBytes,
         sizeKB: Math.round(sizeBytes / 1024),
         message: `Free tier applies (file size < ${this.config.freeTierLimit / 1024}KB)`
       };
     }
-    
-    // For larger files, get actual pricing
-    const price = await this.turbo.getFilePrice(sizeBytes);
-    
-    return {
-      cost: price,
-      isFree: false,
-      sizeBytes,
-      sizeKB: Math.round(sizeBytes / 1024),
-      message: `File exceeds free tier limit of ${this.config.freeTierLimit / 1024}KB`
-    };
+
+    // For larger files, get actual pricing using Turbo SDK
+    try {
+      const [uploadCostForFile] = await this.turbo.getUploadCosts({ bytes: [sizeBytes] });
+      const { winc, adjustments } = uploadCostForFile;
+
+      return {
+        cost: Number(winc),
+        costWinc: Number(winc),
+        adjustments,
+        isFree: false,
+        sizeBytes,
+        sizeKB: Math.round(sizeBytes / 1024),
+        message: `File exceeds free tier limit of ${this.config.freeTierLimit / 1024}KB`
+      };
+    } catch (error) {
+      throw new Error(`Failed to get upload cost: ${error.message}`);
+    }
   }
 
   /**
